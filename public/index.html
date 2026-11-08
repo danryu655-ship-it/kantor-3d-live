@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kantor 3D Live — Nihongo Santai</title>
+<link rel="icon" href="data:,">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #14161c; color: #e8eaf0; min-height: 100vh; }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1d2029; border-bottom: 1px solid #333; flex-wrap: wrap; }
+  header h1 { font-size: 18px; }
+  header h1 span { color: #f4a7b9; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: #2c3140; }
+  .pill.online { background: #1e5c34; }
+  #btnLeave { margin-left: auto; }
+  button { background: #e4572e; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  button.secondary { background: #3a4054; }
+  button.small { padding: 4px 9px; font-size: 12px; border-radius: 6px; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #444; background: #232634; color: #e8eaf0; font-size: 14px; }
+  label { display: block; font-size: 13px; color: #aab; margin: 10px 0 4px; }
+  .screen { max-width: 560px; margin: 40px auto; padding: 24px; background: #1d2029; border-radius: 14px; border: 1px solid #333; }
+  .screen h2 { margin-bottom: 8px; }
+  .screen p { color: #b9becd; line-height: 1.6; font-size: 14px; margin-bottom: 10px; }
+  .note { background: #262a38; border-left: 3px solid #e4572e; padding: 10px 12px; border-radius: 6px; font-size: 13px; color: #c6cbda; margin: 12px 0; }
+  .error { color: #ff8a7a; font-size: 13px; margin-top: 8px; min-height: 18px; }
+  .role { display: inline-block; font-size: 11px; font-weight: bold; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+  .role.owner { background: #8a6d1b; color: #ffe9a8; }
+  .role.pegawai { background: #1d4e89; color: #bcd8ff; }
+  .role.tamu { background: #1e5c34; color: #b9f0cd; }
+  /* ---- Office layout ---- */
+  #screen-office { display: none; height: calc(100vh - 53px); }
+  #officeWrap { display: flex; height: 100%; }
+  #sceneWrap { position: relative; flex: 1; min-width: 0; }
+  #scene { width: 100%; height: 100%; display: block; touch-action: none; }
+  #sceneHint { position: absolute; left: 10px; bottom: 10px; background: rgba(20,22,28,.85); padding: 6px 10px; border-radius: 8px; font-size: 12px; color: #c6cbda; }
+  #onlineBox { position: absolute; left: 10px; top: 10px; background: rgba(20,22,28,.88); padding: 8px 12px; border-radius: 8px; font-size: 13px; max-width: 230px; }
+  #onlineBox b { display: block; margin-bottom: 4px; }
+  #onlineBox .person { display: flex; gap: 6px; align-items: center; margin: 3px 0; }
+  #onlineBox .dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; flex-shrink: 0; }
+  #sidebar { width: 330px; flex-shrink: 0; background: #1d2029; border-left: 1px solid #333; overflow-y: auto; padding: 12px; }
+  #sidebar h3 { font-size: 14px; margin: 14px 0 6px; }
+  #sidebar h3:first-child { margin-top: 0; }
+  .card { background: #262a38; border-radius: 10px; padding: 10px; margin-bottom: 8px; font-size: 13px; }
+  .card .meta { color: #9aa1b5; font-size: 12px; margin-top: 4px; }
+  .card .actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .inviteLink { word-break: break-all; background: #14161c; padding: 8px; border-radius: 6px; font-size: 13px; margin: 8px 0; }
+  #chatLog { height: 180px; overflow-y: auto; background: #14161c; border-radius: 8px; padding: 8px; font-size: 13px; }
+  #chatLog .msg { margin-bottom: 6px; line-height: 1.45; }
+  #chatLog .msg b { color: #f4a7b9; }
+  #chatRow { display: flex; gap: 6px; margin-top: 6px; }
+  #chatRow input { flex: 1; }
+  .boardItem { border-left: 3px solid #e4572e; }
+  .boardItem .status { font-size: 11px; color: #9aa1b5; }
+  @media (max-width: 820px) {
+    #officeWrap { flex-direction: column; height: auto; }
+    #screen-office { height: auto; }
+    #sceneWrap { height: 55vh; }
+    #sidebar { width: 100%; border-left: none; border-top: 1px solid #333; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏢 Kantor 3D Live <span>— Nihongo Santai</span></h1>
+  <span class="pill" id="statusPill">Memuat…</span>
+  <button class="secondary small" id="btnLeave" style="display:none">Keluar</button>
+</header>
+
+<!-- Loading -->
+<div class="screen" id="screen-loading"><h2>Memuat kantor…</h2><p>Menghubungi server.</p></div>
+
+<!-- Landing: belum punya akses -->
+<div class="screen" id="screen-landing" style="display:none">
+  <h2>Selamat datang di Kantor 3D Live</h2>
+  <p>Kantor virtual Nihongo Santai. Teman — manusia maupun agent — bisa masuk lewat link undangan dari room owner, lalu disetujui dan diberi peran <b>Tamu</b> atau <b>Pegawai</b>.</p>
+  <div id="landingClaim" style="display:none">
+    <p><b>Ruangan ini belum punya owner.</b> Kamu pengunjung pertama — klaim ruangan ini sebagai Room Owner.</p>
+    <label>Nama kamu (owner)</label>
+    <input id="ownerName" maxlength="40" placeholder="cth: Daniel">
+    <div style="margin-top:12px"><button id="btnClaim">Claim as Room Owner</button></div>
+    <div class="note">Klaim hanya bisa dilakukan sekali (first-come). Token owner disimpan di browser ini — jangan hapus data browser sebelum selesai, dan jangan bagikan token itu ke siapa pun.</div>
+  </div>
+  <div id="landingNeedInvite" style="display:none">
+    <p>Ruangan ini sudah ada owner-nya. Untuk masuk, kamu butuh <b>link undangan</b> dari owner (berlaku 24 jam). Minta linknya ke owner, lalu buka link itu.</p>
+    <div class="note">Tidak punya link? Kamu tidak bisa masuk tanpa persetujuan owner — memang begitu aturannya.</div>
+  </div>
+  <div class="error" id="landingError"></div>
+</div>
+
+<!-- Join lewat undangan -->
+<div class="screen" id="screen-join" style="display:none">
+  <h2>Minta masuk ke kantor</h2>
+  <p>Kamu membuka link undangan. Isi data di bawah — permintaanmu akan dikirim ke room owner untuk disetujui atau ditolak.</p>
+  <label>Nama kamu</label>
+  <input id="joinName" maxlength="40" placeholder="cth: Bimo">
+  <label>Kamu masuk sebagai</label>
+  <select id="joinKind">
+    <option value="manusia">Manusia (teman)</option>
+    <option value="agent">Agent</option>
+  </select>
+  <div id="agentIdWrap" style="display:none">
+    <label>Agent ID</label>
+    <input id="joinAgentId" maxlength="80" placeholder="cth: bimo.ai">
+    <div class="note">Agent ID adalah kartu identitasmu di pintu kantor. Tanpa Agent ID, agent tidak bisa masuk.</div>
+  </div>
+  <div style="margin-top:14px"><button id="btnJoin">Kirim Permintaan Masuk</button></div>
+  <div class="error" id="joinError"></div>
+</div>
+
+<!-- Menunggu persetujuan -->
+<div class="screen" id="screen-waiting" style="display:none">
+  <h2>Permintaan terkirim ⏳</h2>
+  <p>Room owner sedang meninjau permintaanmu. Halaman ini memeriksa status otomatis — tetap buka halaman ini.</p>
+  <p id="waitingStatus">Status: menunggu persetujuan…</p>
+  <div class="error" id="waitingError"></div>
+</div>
+
+<!-- Ditolak -->
+<div class="screen" id="screen-denied" style="display:none">
+  <h2>Permintaan ditolak</h2>
+  <p>Room owner menolak permintaan masukmu. Kalau kamu merasa ini keliru, hubungi owner secara langsung dan minta link undangan baru.</p>
+</div>
+
+<!-- Kantor -->
+<div id="screen-office">
+  <div id="officeWrap">
+    <div id="sceneWrap">
+      <canvas id="scene"></canvas>
+      <div id="onlineBox"><b>🟢 Online sekarang</b><div id="onlineList"></div>
+        <div style="color:#9aa1b5;font-size:12px;margin-top:6px">Hanya orang yang benar-benar sedang terhubung yang terlihat di sini — tidak ada bot.</div>
+      </div>
+      <div id="sceneHint">Gerak: WASD / tombol panah, atau klik lantai untuk berjalan. Ruang Kerja (kanan atas) hanya untuk Pegawai &amp; Owner.</div>
+    </div>
+    <div id="sidebar">
+      <h3>👤 Kamu</h3>
+      <div class="card" id="meCard"></div>
+
+      <div id="ownerPanel" style="display:none">
+        <h3>🔑 Panel Owner</h3>
+        <button id="btnInvite">+ Buat Link Undangan (24 jam)</button>
+        <div id="inviteOut"></div>
+        <h3>📥 Permintaan Masuk</h3>
+        <div id="requestList"><div class="card">Tidak ada permintaan menunggu.</div></div>
+        <h3>👥 Anggota</h3>
+        <div id="memberList"></div>
+      </div>
+
+      <h3>📌 Papan Tugas Bersama</h3>
+      <div id="boardList"></div>
+      <label>Judul tugas</label>
+      <input id="boardTitle" maxlength="80" placeholder="cth: Draft caption Furano">
+      <label>Isi / catatan</label>
+      <textarea id="boardText" rows="2" maxlength="500" placeholder="Detail tugas…"></textarea>
+      <div style="margin-top:8px"><button id="btnAddBoard">+ Tempel ke Papan</button></div>
+      <div class="note" id="boardNote">Tamu hanya bisa menempel tugas. Mengambil, mengedit, dan menghapus hanya untuk Pegawai &amp; Owner.</div>
+
+      <h3>💬 Chat Kantor</h3>
+      <div id="chatLog"></div>
+      <div id="chatRow">
+        <input id="chatInput" maxlength="500" placeholder="Tulis pesan…">
+        <button id="btnChat">Kirim</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.152.2/three.min.js"></script>
+<script>
+"use strict";
+// ===========================================================================
+// Kantor 3D Live — client
+// ===========================================================================
+const $ = (id) => document.getElementById(id);
+const TOKEN_KEY = 'k3l_token';
+const REQ_KEY = 'k3l_request';
+let token = localStorage.getItem(TOKEN_KEY) || '';
+let me = null;             // { id, name, kind, agentId, role }
+let ws = null;
+let board = [];
+let chat = [];
+let online = [];
+let inviteCodeFromUrl = new URLSearchParams(location.search).get('invite') || '';
+
+async function api(path, method, body, useToken) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (useToken && token) headers['X-Auth-Token'] = token;
+  const res = await fetch(path, { method: method || 'GET', headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+function show(id) {
+  for (const s of ['screen-loading','screen-landing','screen-join','screen-waiting','screen-denied','screen-office']) {
+    $(s).style.display = s === id ? (id === 'screen-office' ? 'block' : 'block') : 'none';
+  }
+  if (id === 'screen-office') $('screen-office').style.display = 'block';
+}
+function setStatus(text, online) {
+  const p = $('statusPill');
+  p.textContent = text;
+  p.classList.toggle('online', !!online);
+}
+function roleBadge(role) { return '<span class="role ' + role + '">' + role + '</span>'; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+<script>
+"use strict";
+// --- Lanjutan: alur layar (landing / join / waiting / office) ---
+
+async function boot() {
+  show('screen-loading');
+  try {
+    if (token) {
+      const r = await api('/api/me', 'GET', null, true);
+      me = r.member;
+      enterOffice();
+      return;
+    }
+  } catch (_) { token = ''; localStorage.removeItem(TOKEN_KEY); }
+
+  // Ada permintaan masuk yang sedang menunggu?
+  const savedReq = JSON.parse(localStorage.getItem(REQ_KEY) || 'null');
+  if (savedReq && savedReq.id) { showWaiting(savedReq); return; }
+
+  if (inviteCodeFromUrl) { show('screen-join'); setStatus('Link undangan'); return; }
+
+  try {
+    const st = await api('/api/status');
+    if (!st.claimed) {
+      show('screen-landing');
+      $('landingClaim').style.display = 'block';
+      setStatus('Belum ada owner');
+    } else {
+      show('screen-landing');
+      $('landingNeedInvite').style.display = 'block';
+      setStatus('Butuh link undangan');
+    }
+  } catch (e) {
+    $('landingError').textContent = 'Tidak bisa menghubungi server: ' + e.message;
+    show('screen-landing');
+  }
+}
+
+$('btnClaim').onclick = async () => {
+  const name = $('ownerName').value.trim();
+  if (!name) { $('landingError').textContent = 'Isi namamu dulu.'; return; }
+  $('btnClaim').disabled = true;
+  try {
+    const r = await api('/api/claim-owner', 'POST', { name });
+    token = r.token;
+    localStorage.setItem(TOKEN_KEY, token);
+    me = r.member;
+    enterOffice();
+  } catch (e) {
+    $('landingError').textContent = e.message;
+    $('btnClaim').disabled = false;
+  }
+};
+
+$('joinKind').onchange = () => {
+  $('agentIdWrap').style.display = $('joinKind').value === 'agent' ? 'block' : 'none';
+};
+$('btnJoin').onclick = async () => {
+  const name = $('joinName').value.trim();
+  const kind = $('joinKind').value;
+  const agentId = $('joinAgentId').value.trim();
+  if (!name) { $('joinError').textContent = 'Isi namamu dulu.'; return; }
+  if (kind === 'agent' && !agentId) { $('joinError').textContent = 'Agent wajib mengisi Agent ID.'; return; }
+  $('btnJoin').disabled = true;
+  try {
+    const r = await api('/api/join-request', 'POST', { inviteCode: inviteCodeFromUrl, name, kind, agentId });
+    localStorage.setItem(REQ_KEY, JSON.stringify({ id: r.requestId, token: r.requestToken }));
+    showWaiting({ id: r.requestId, token: r.requestToken });
+  } catch (e) {
+    $('joinError').textContent = e.message;
+    $('btnJoin').disabled = false;
+  }
+};
+
+let waitTimer = null;
+function showWaiting(req) {
+  show('screen-waiting');
+  setStatus('Menunggu persetujuan');
+  $('waitingStatus').textContent = 'Status: menunggu persetujuan…';
+  clearInterval(waitTimer);
+  waitTimer = setInterval(async () => {
+    try {
+      const r = await api('/api/join-request/' + req.id + '?token=' + encodeURIComponent(req.token));
+      if (r.status === 'approved' && r.memberToken) {
+        clearInterval(waitTimer);
+        localStorage.removeItem(REQ_KEY);
+        token = r.memberToken;
+        localStorage.setItem(TOKEN_KEY, token);
+        const m = await api('/api/me', 'GET', null, true);
+        me = m.member;
+        enterOffice();
+      } else if (r.status === 'rejected') {
+        clearInterval(waitTimer);
+        localStorage.removeItem(REQ_KEY);
+        show('screen-denied');
+        setStatus('Ditolak');
+      }
+    } catch (e) {
+      $('waitingError').textContent = e.message;
+    }
+  }, 3000);
+}
+
+$('btnLeave').onclick = () => {
+  if (ws) ws.close();
+  token = ''; me = null;
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REQ_KEY);
+  location.href = location.pathname;
+};
+
+// --- Panel owner ---
+async function loadRequests() {
+  try {
+    const r = await api('/api/requests', 'GET', null, true);
+    const box = $('requestList');
+    if (!r.requests.length) { box.innerHTML = '<div class="card">Tidak ada permintaan menunggu.</div>'; return; }
+    box.innerHTML = r.requests.map((q) =>
+      '<div class="card"><b>' + esc(q.name) + '</b> ' + roleBadge('tamu') +
+      '<div class="meta">' + (q.kind === 'agent' ? 'Agent · ID: ' + esc(q.agentId) : 'Manusia') +
+      ' · ' + new Date(q.createdAt).toLocaleString('id-ID') + '</div>' +
+      '<div class="actions">' +
+      '<select id="role-' + q.id + '"><option value="tamu">Tamu</option><option value="pegawai">Pegawai</option></select>' +
+      '<button class="small" onclick="decideRequest(\'' + q.id + '\', true)">Setujui</button>' +
+      '<button class="small secondary" onclick="decideRequest(\'' + q.id + '\', false)">Tolak</button>' +
+      '</div></div>').join('');
+  } catch (e) { /* diam saja, coba lagi nanti */ }
+}
+async function decideRequest(id, approve) {
+  try {
+    if (approve) {
+      const role = ($('role-' + id) || {}).value || 'tamu';
+      await api('/api/requests/' + id + '/approve', 'POST', { role }, true);
+    } else {
+      await api('/api/requests/' + id + '/reject', 'POST', {}, true);
+    }
+    loadRequests(); loadMembers();
+  } catch (e) { alert(e.message); }
+}
+async function loadMembers() {
+  try {
+    const r = await api('/api/members', 'GET', null, true);
+    $('memberList').innerHTML = r.members.map((m) =>
+      '<div class="card"><b>' + esc(m.name) + '</b> ' + roleBadge(m.role) +
+      '<div class="meta">' + (m.kind === 'agent' ? 'Agent · ' + esc(m.agentId) : 'Manusia') + '</div>' +
+      (m.role !== 'owner'
+        ? '<div class="actions">' +
+          '<select id="mrole-' + m.id + '"><option value="tamu"' + (m.role === 'tamu' ? ' selected' : '') + '>Tamu</option>' +
+          '<option value="pegawai"' + (m.role === 'pegawai' ? ' selected' : '') + '>Pegawai</option></select>' +
+          '<button class="small" onclick="changeRole(\'' + m.id + '\')">Ubah Peran</button>' +
+          '<button class="small secondary" onclick="revokeMember(\'' + m.id + '\',\'' + esc(m.name) + '\')">Keluarkan</button></div>'
+        : '') +
+      '</div>').join('');
+  } catch (e) { /* diam */ }
+}
+async function changeRole(id) {
+  try {
+    await api('/api/members/' + id + '/role', 'POST', { role: $('mrole-' + id).value }, true);
+    loadMembers();
+  } catch (e) { alert(e.message); }
+}
+async function revokeMember(id, name) {
+  if (!confirm('Keluarkan ' + name + ' dari kantor?')) return;
+  try {
+    await api('/api/members/' + id + '/revoke', 'POST', {}, true);
+    loadMembers();
+  } catch (e) { alert(e.message); }
+}
+$('btnInvite').onclick = async () => {
+  try {
+    const r = await api('/api/invites', 'POST', {}, true);
+    const link = location.origin + r.linkPath;
+    $('inviteOut').innerHTML =
+      '<div class="inviteLink">' + esc(link) + '</div>' +
+      '<div style="display:flex;gap:6px"><button class="small" onclick="navigator.clipboard.writeText(\'' + link + '\').then(()=>{this.textContent=\'Disalin ✓\';})">Salin Link</button>' +
+      '<button class="small secondary" onclick="deleteInvite(\'' + r.invite.code + '\')">Hapus Undangan</button></div>' +
+      '<div class="note">Berlaku 24 jam sejak dibuat. Siapa pun yang membuka link ini bisa minta masuk — tetap owner yang memutuskan.</div>';
+  } catch (e) { alert(e.message); }
+};
+async function deleteInvite(code) {
+  try {
+    await api('/api/invites/' + code, 'DELETE', null, true);
+    $('inviteOut').innerHTML = '';
+  } catch (e) { alert(e.message); }
+}
+
+// --- Papan tugas & chat ---
+function renderBoard() {
+  const box = $('boardList');
+  if (!board.length) { box.innerHTML = '<div class="card">Papan masih kosong. Tempel tugas pertama.</div>'; return; }
+  const canEdit = me && me.role !== 'tamu';
+  box.innerHTML = board.map((it) =>
+    '<div class="card boardItem"><b>' + esc(it.title) + '</b> <span class="status">[' + it.status + (it.assignee ? ' · ' + esc(it.assignee) : '') + ']</span>' +
+    (it.text ? '<div>' + esc(it.text) + '</div>' : '') +
+    '<div class="meta">oleh ' + esc(it.author) + ' · ' + new Date(it.createdAt).toLocaleString('id-ID') + '</div>' +
+    (canEdit ? '<div class="actions">' +
+      (it.status === 'baru' ? '<button class="small" onclick="boardPatch(\'' + it.id + '\',{status:\'diambil\'})">Ambil</button>' : '') +
+      (it.status === 'diambil' ? '<button class="small" onclick="boardPatch(\'' + it.id + '\',{status:\'selesai\'})">Selesai ✓</button>' : '') +
+      '<button class="small secondary" onclick="boardDelete(\'' + it.id + '\')">Hapus</button></div>' : '') +
+    '</div>').join('');
+}
+async function boardPatch(id, patch) {
+  try { await api('/api/board/' + id, 'PATCH', patch, true); } catch (e) { alert(e.message); }
+}
+async function boardDelete(id) {
+  if (!confirm('Hapus tugas ini?')) return;
+  try { await api('/api/board/' + id, 'DELETE', null, true); } catch (e) { alert(e.message); }
+}
+$('btnAddBoard').onclick = async () => {
+  const title = $('boardTitle').value.trim();
+  const text = $('boardText').value.trim();
+  if (!title) { alert('Judul tugas wajib diisi.'); return; }
+  try {
+    await api('/api/board', 'POST', { title, text }, true);
+    $('boardTitle').value = ''; $('boardText').value = '';
+  } catch (e) { alert(e.message); }
+};
+function renderChat() {
+  const log = $('chatLog');
+  log.innerHTML = chat.map((m) =>
+    '<div class="msg"><b>' + esc(m.author) + '</b> ' + roleBadge(m.role) + ' <span style="color:#9aa1b5">' +
+    new Date(m.at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + '</span><br>' + esc(m.text) + '</div>').join('');
+  log.scrollTop = log.scrollHeight;
+}
+async function sendChat() {
+  const inp = $('chatInput');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'chat', text }));
+  else {
+    try { await api('/api/chat', 'POST', { text }, true); } catch (e) { alert(e.message); }
+  }
+}
+$('btnChat').onclick = sendChat;
+$('chatInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+function renderOnline() {
+  $('onlineList').innerHTML = online.map((p) =>
+    '<div class="person"><span class="dot"></span><span>' + esc(p.name) + '</span> ' + roleBadge(p.role) + '</div>').join('') ||
+    '<div style="color:#9aa1b5">Tidak ada yang online.</div>';
+  setStatus(online.length + ' online', online.length > 0);
+}
+</script>
+<script>
+"use strict";
+// --- Masuk kantor: Three.js + WebSocket ---
+let renderer, scene, camera, floorMesh;
+let avatars = {}; // memberId -> { group, sprite, x, z, tx, tz }
+let myPos = { x: -8, z: 4 };
+let moveTarget = null;
+const keys = {};
+const BOUNDS = { xMin: -11.4, xMax: 11.4, zMin: -7.4, zMax: 7.4 };
+
+function clampLocal(x, z, role, prev) {
+  x = Math.max(BOUNDS.xMin, Math.min(BOUNDS.xMax, x));
+  z = Math.max(BOUNDS.zMin, Math.min(BOUNDS.zMax, z));
+  const px = prev ? prev.x : x, pz = prev ? prev.z : z;
+  const inWallZ = z < -1 && z > -8;
+  const inGap = z >= -5 && z <= -3;
+  if (inWallZ && !inGap) {
+    if (px < 4 && x >= 4) x = 3.8;
+    else if (px > 4 && x <= 4) x = 4.2;
+    else if (x > 3.8 && x < 4.2) x = px < 4 ? 3.8 : 4.2;
+  }
+  if (x > 4 && pz < -1 && z >= -1) z = -1.2;
+  else if (x > 4 && pz > -1 && z <= -1) z = -0.8;
+  else if (x > 4 && z > -1.2 && z < -0.8) z = pz < -1 ? -1.2 : -0.8;
+  if (role === 'tamu' && x > 4 && z < -1) x = 3.8;
+  return { x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100 };
+}
+
+const ROLE_COLOR = { owner: 0xf2c14e, pegawai: 0x4a90d9, tamu: 0x4ade80 };
+function makeLabel(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(20,22,28,0.85)'; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = color || '#fff'; g.font = 'bold 26px system-ui, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(text.slice(0, 18), 128, 34);
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const spr = new THREE.Sprite(mat); spr.scale.set(2.4, 0.6, 1);
+  return spr;
+}
+function makeAvatar(p) {
+  const group = new THREE.Group();
+  const color = ROLE_COLOR[p.role] || 0x9aa1b5;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.0, 0.45), new THREE.MeshLambertMaterial({ color }));
+  body.position.y = 0.7;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), new THREE.MeshLambertMaterial({ color: 0xf2c9a0 }));
+  head.position.y = 1.45;
+  const label = makeLabel(p.name + ' · ' + p.role, '#ffffff');
+  label.position.y = 2.1;
+  group.add(body, head, label);
+  group.position.set(p.x || -8, 0, p.z || 4);
+  return { group, x: p.x || -8, z: p.z || 4, tx: p.x || -8, tz: p.z || 4 };
+}
+function syncAvatars(list) {
+  const seen = new Set();
+  for (const p of list) {
+    seen.add(p.id);
+    if (!avatars[p.id]) { avatars[p.id] = makeAvatar(p); scene.add(avatars[p.id].group); }
+    avatars[p.id].tx = p.x; avatars[p.id].tz = p.z;
+    if (p.id === me.id) { myPos = { x: p.x, z: p.z }; avatars[p.id].x = p.x; avatars[p.id].z = p.z; }
+  }
+  for (const id of Object.keys(avatars)) {
+    if (!seen.has(id)) { scene.remove(avatars[id].group); delete avatars[id]; }
+  }
+}
+
+function buildScene() {
+  const canvas = $('scene');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1d26);
+  camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+  const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+  dir.position.set(6, 12, 8); scene.add(dir);
+
+  const floorMat = new THREE.MeshLambertMaterial({ color: 0x2a2f3a });
+  floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(24, 16), floorMat);
+  floorMesh.rotation.x = -Math.PI / 2; scene.add(floorMesh);
+  const grid = new THREE.GridHelper(24, 24, 0x3a4054, 0x3a4054);
+  grid.position.y = 0.01; scene.add(grid);
+
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x4a5068 });
+  const workMat = new THREE.MeshLambertMaterial({ color: 0x6b4a2f });
+  function wall(x, z, w, d, mat) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 3, d), mat || wallMat);
+    m.position.set(x, 1.5, z); scene.add(m);
+  }
+  // Dinding luar
+  wall(0, -8, 24, 0.3); wall(0, 8, 24, 0.3); wall(-12, 0, 0.3, 16); wall(12, 0, 0.3, 16);
+  // Ruang Kerja: dinding barat x=4 (celah pintu z -5..-3), dinding selatan z=-1
+  wall(4, -6.5, 0.3, 3, workMat); wall(4, -2, 0.3, 2, workMat); wall(8, -1, 8, 0.3, workMat);
+
+  // Karpet lobi
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(10, 6), new THREE.MeshLambertMaterial({ color: 0x5a2e35 }));
+  carpet.rotation.x = -Math.PI / 2; carpet.position.set(-5, 0.02, 3); scene.add(carpet);
+
+  // Meja Agen 1-8 + label
+  const deskMat = new THREE.MeshLambertMaterial({ color: 0x8a6d4b });
+  const chairMat = new THREE.MeshLambertMaterial({ color: 0x3a4054 });
+  const desks = [
+    [-10, -6.5], [-7, -6.5], [-4, -6.5], [-1, -6.5], // Lobi utara: Agen 1-4
+    [6, -6.5], [10, -6.5],                            // Ruang Kerja: Agen 5-6
+    [-10, 6.5], [-7, 6.5],                            // Lobi selatan: Agen 7-8
+  ];
+  desks.forEach(([x, z], i) => {
+    const d = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.75, 1), deskMat);
+    d.position.set(x, 0.38, z); scene.add(d);
+    const ch = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), chairMat);
+    ch.position.set(x, 0.3, z + (z < 0 ? 1 : -1)); scene.add(ch);
+    const lab = makeLabel('Agen ' + (i + 1), '#ffd9a8');
+    lab.position.set(x, 1.6, z); scene.add(lab);
+  });
+  // Papan tulis visual di dinding lobi
+  const sign1 = makeLabel('KANTOR KONTEN — NIHONGO SANTAI', '#f4a7b9');
+  sign1.scale.set(7, 1.75, 1); sign1.position.set(-4, 2.6, -7.7); scene.add(sign1);
+  const sign2 = makeLabel('RUANG KERJA — Pegawai & Owner', '#ffd9a8');
+  sign2.scale.set(5, 1.25, 1); sign2.position.set(8, 2.6, -0.7); scene.add(sign2);
+  const sign3 = makeLabel('LOBI', '#bcd8ff');
+  sign3.scale.set(2.4, 0.6, 1); sign3.position.set(-5, 2.6, 7.7); scene.add(sign3);
+
+  const resize = () => {
+    const w = $('sceneWrap').clientWidth, h = $('sceneWrap').clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  };
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Klik lantai = berjalan ke titik itu
+  const ray = new THREE.Raycaster();
+  canvas.addEventListener('pointerdown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
+    const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+    ray.setFromCamera({ x: nx, y: ny }, camera);
+    const hit = ray.intersectObject(floorMesh);
+    if (hit.length) {
+      const p = clampLocal(hit[0].point.x, hit[0].point.z, me.role, myPos);
+      moveTarget = p;
+    }
+  });
+
+  window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
+  window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+  let lastSent = 0;
+  (function loop() {
+    requestAnimationFrame(loop);
+    const dt = 0.12;
+    let dx = 0, dz = 0;
+    if (keys['w'] || keys['arrowup']) dz -= 1;
+    if (keys['s'] || keys['arrowdown']) dz += 1;
+    if (keys['a'] || keys['arrowleft']) dx -= 1;
+    if (keys['d'] || keys['arrowright']) dx += 1;
+    if (dx || dz) {
+      moveTarget = null;
+      const len = Math.hypot(dx, dz);
+      const np = clampLocal(myPos.x + (dx / len) * 5 * dt, myPos.z + (dz / len) * 5 * dt, me.role, myPos);
+      myPos = np;
+    } else if (moveTarget) {
+      const ddx = moveTarget.x - myPos.x, ddz = moveTarget.z - myPos.z;
+      const dist = Math.hypot(ddx, ddz);
+      if (dist < 0.15) moveTarget = null;
+      else {
+        const np = clampLocal(myPos.x + (ddx / dist) * 5 * dt, myPos.z + (ddz / dist) * 5 * dt, me.role, myPos);
+        myPos = np;
+      }
+    }
+    // Kirim posisi (max ~10x/detik)
+    if (ws && ws.readyState === WebSocket.OPEN && Date.now() - lastSent > 100) {
+      ws.send(JSON.stringify({ type: 'move', x: myPos.x, z: myPos.z }));
+      lastSent = Date.now();
+    }
+    // Lerp avatar lain
+    for (const id of Object.keys(avatars)) {
+      const a = avatars[id];
+      if (id === me.id) { a.group.position.set(myPos.x, 0, myPos.z); a.x = myPos.x; a.z = myPos.z; continue; }
+      a.x += (a.tx - a.x) * 0.25; a.z += (a.tz - a.z) * 0.25;
+      a.group.position.set(a.x, 0, a.z);
+    }
+    // Kamera mengikuti avatar sendiri
+    if (avatars[me.id]) {
+      const p = avatars[me.id].group.position;
+      camera.position.set(p.x, 13, p.z + 11);
+      camera.lookAt(p.x, 0, p.z);
+    }
+    renderer.render(scene, camera);
+  })();
+}
+
+function enterOffice() {
+  show('screen-office');
+  $('btnLeave').style.display = 'inline-block';
+  $('meCard').innerHTML = '<b>' + esc(me.name) + '</b> ' + roleBadge(me.role) +
+    '<div class="meta">' + (me.kind === 'agent' ? 'Agent · ID: ' + esc(me.agentId) : 'Manusia') + '</div>';
+  $('ownerPanel').style.display = me.role === 'owner' ? 'block' : 'none';
+  $('boardNote').textContent = me.role === 'tamu'
+    ? 'Kamu Tamu: hanya bisa menempel tugas. Mengambil, mengedit, dan menghapus hanya untuk Pegawai & Owner.'
+    : 'Kamu ' + (me.role === 'owner' ? 'Owner' : 'Pegawai') + ': bisa mengambil, menyelesaikan, dan menghapus tugas.';
+  if (me.role === 'owner') { loadRequests(); loadMembers(); setInterval(() => { loadRequests(); loadMembers(); }, 8000); }
+  if (!window.THREE) { alert('Three.js gagal dimuat dari CDN. Periksa koneksi internet lalu muat ulang.'); return; }
+  buildScene();
+  connectWS();
+}
+
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws?token=' + encodeURIComponent(token));
+  ws.onmessage = (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch (_) { return; }
+    if (msg.type === 'hello') {
+      online = msg.online; board = msg.board; chat = msg.chat;
+      myPos = { x: msg.you.x, z: msg.you.z };
+      syncAvatars(online); renderOnline(); renderBoard(); renderChat();
+    } else if (msg.type === 'presence') {
+      online = msg.online; syncAvatars(online); renderOnline();
+    } else if (msg.type === 'pos') {
+      const a = avatars[msg.id];
+      if (a && msg.id !== me.id) { a.tx = msg.x; a.tz = msg.z; }
+    } else if (msg.type === 'chat') {
+      chat.push(msg.message); if (chat.length > 100) chat = chat.slice(-100);
+      renderChat();
+    } else if (msg.type === 'board') {
+      board = msg.board; renderBoard();
+    } else if (msg.type === 'request') {
+      if (me.role === 'owner') loadRequests();
+    } else if (msg.type === 'request-decided') {
+      if (me.role === 'owner') { loadRequests(); loadMembers(); }
+    } else if (msg.type === 'member-updated') {
+      if (msg.member.id === me.id) { me.role = msg.member.role; location.reload(); }
+      if (me.role === 'owner') loadMembers();
+    } else if (msg.type === 'member-removed') {
+      if (me.role === 'owner') loadMembers();
+    } else if (msg.type === 'kicked') {
+      alert('Kamu dikeluarkan dari kantor oleh owner.');
+      $('btnLeave').onclick();
+    }
+  };
+  ws.onclose = () => {
+    setStatus('Terputus — mencoba lagi…', false);
+    setTimeout(() => { if (me) connectWS(); }, 3000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (_) {} };
+}
+
+boot();
+</script>
+</body>
+</html>
