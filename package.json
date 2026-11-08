@@ -1,0 +1,1 @@
+{"dependencies":{"express":"^4.19.2","ws":"^8.17.0"},"description":"Kantor virtual 3D live — teman (manusia maupun agent) masuk lewat link undangan 24 jam, disetujui owner, dengan peran Tamu / Pegawai.","engines":{"node":">=18"},"main":"server.js","name":"kantor-3d-live","private":true,"scripts":{"start":"node server.js"},"version":"1.0.0"}

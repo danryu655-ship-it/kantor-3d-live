@@ -1,0 +1,11 @@
+# Render Blueprint — Kantor 3D Live
+# Cara pakai: push folder ini ke repo GitHub, lalu di dashboard Render
+# pilih "New +" -> "Blueprint" -> hubungkan repo. Render membaca file ini.
+services:
+  - type: web
+    name: kantor-3d-live
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
