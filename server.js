@@ -62,12 +62,13 @@ function clampPosition(x, z, role, prev) {
 // State
 // ---------------------------------------------------------------------------
 function emptyState() {
-  return { owner: null, members: [], invites: [], requests: [], board: [], chat: [] };
+  return { owner: null, members: [], invites: [], requests: [], board: [], chat: [], pending: [] };
 }
 function loadState() {
   try {
     const s = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
     if (!s || !Array.isArray(s.members)) return emptyState();
+    if (!Array.isArray(s.pending)) s.pending = []; // state lama belum punya antrean usulan
     return s;
   } catch (_) {
     return emptyState();
@@ -103,6 +104,24 @@ function findMemberByToken(token) {
   if (!token) return null;
   const h = hashToken(token);
   return state.members.find((m) => m.tokenHash === h) || null;
+}
+
+// Aturan tulis (pesan owner 2026-11-10):
+// - Owner + Rias (Manajer) boleh mengisi papan tugas & chat secara bebas.
+// - Pegawai lain hanya boleh MENGUSULKAN: usulannya masuk antrean pending
+//   dan baru tampil setelah disetujui owner.
+// - Tamu tidak boleh mengisi apa pun (papan tugas maupun chat).
+// Rias dikenali lewat nama (stabil meski join ulang); Agent ID Rias dan Mia
+// sama (coddingapps.ai) jadi nama satu-satunya pembeda.
+function canWriteFree(m) {
+  return m.role === 'owner' || m.name === 'Rias';
+}
+function queueProposal(type, member, data) {
+  const p = { id: newId(), type, author: member.name, authorId: member.id, status: 'pending', createdAt: now(), ...data };
+  state.pending.push(p);
+  saveState();
+  broadcast({ type: 'pending', pending: state.pending });
+  return p;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,12 +287,19 @@ app.post('/api/members/:id/revoke', authMember, requireOwner, (req, res) => {
 });
 
 // --- Papan tugas ---
-// Tamu: hanya boleh menambah. Pegawai/Owner: tambah, ambil, edit, hapus.
+// Tamu: tidak boleh mengisi sama sekali. Pegawai (selain Rias): hanya boleh
+// mengusulkan — usulan masuk antrean pending sampai disetujui owner.
+// Owner + Rias: tambah bebas. Ambil/edit/hapus: Pegawai & Owner (tamu tidak).
 app.get('/api/board', authMember, (_req, res) => res.json({ board: state.board }));
 app.post('/api/board', authMember, (req, res) => {
   const title = clean(req.body && req.body.title, 80);
   const text = clean(req.body && req.body.text, 500);
   if (!title) return res.status(400).json({ error: 'Judul tugas wajib diisi.' });
+  if (req.member.role === 'tamu') return res.status(403).json({ error: 'Tamu tidak bisa mengisi papan tugas.' });
+  if (!canWriteFree(req.member)) {
+    const p = queueProposal('task', req.member, { title, text });
+    return res.status(202).json({ pending: true, proposal: p });
+  }
   const item = {
     id: newId(), title, text, author: req.member.name, authorId: req.member.id,
     status: 'baru', assignee: '', createdAt: now(),
@@ -310,16 +336,58 @@ app.delete('/api/board/:id', authMember, (req, res) => {
 });
 
 // --- Chat ---
+// Aturan tulis sama seperti papan tugas: tamu tidak bisa, pegawai (selain
+// Rias) hanya bisa mengusulkan, owner + Rias bebas.
 app.get('/api/chat', authMember, (_req, res) => res.json({ chat: state.chat }));
 app.post('/api/chat', authMember, (req, res) => {
   const text = clean(req.body && req.body.text, 500);
   if (!text) return res.status(400).json({ error: 'Pesan kosong.' });
+  if (req.member.role === 'tamu') return res.status(403).json({ error: 'Tamu tidak bisa mengirim chat kantor.' });
+  if (!canWriteFree(req.member)) {
+    const p = queueProposal('chat', req.member, { text });
+    return res.status(202).json({ pending: true, proposal: p });
+  }
   const msg = { id: newId(), author: req.member.name, role: req.member.role, text, at: now() };
   state.chat.push(msg);
   if (state.chat.length > 100) state.chat = state.chat.slice(-100);
   saveState();
   broadcast({ type: 'chat', message: msg });
   res.json({ message: msg });
+});
+
+// --- Usulan masuk (butuh persetujuan owner) ---
+app.get('/api/pending', authMember, requireOwner, (_req, res) => res.json({ pending: state.pending }));
+app.post('/api/pending/:id/approve', authMember, requireOwner, (req, res) => {
+  const p = state.pending.find((x) => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'Usulan tidak ditemukan.' });
+  state.pending = state.pending.filter((x) => x.id !== p.id);
+  const authorMember = state.members.find((m) => m.id === p.authorId);
+  const role = authorMember ? authorMember.role : 'pegawai';
+  if (p.type === 'task') {
+    const item = {
+      id: newId(), title: p.title, text: p.text || '', author: p.author, authorId: p.authorId,
+      status: 'baru', assignee: '', createdAt: now(),
+    };
+    state.board.push(item);
+    if (state.board.length > 200) state.board = state.board.slice(-200);
+    broadcast({ type: 'board', board: state.board });
+  } else if (p.type === 'chat') {
+    const m = { id: newId(), author: p.author, role, text: p.text, at: now() };
+    state.chat.push(m);
+    if (state.chat.length > 100) state.chat = state.chat.slice(-100);
+    broadcast({ type: 'chat', message: m });
+  }
+  saveState();
+  broadcast({ type: 'pending', pending: state.pending });
+  res.json({ ok: true });
+});
+app.post('/api/pending/:id/reject', authMember, requireOwner, (req, res) => {
+  const p = state.pending.find((x) => x.id === req.params.id);
+  if (!p) return res.status(404).json({ error: 'Usulan tidak ditemukan.' });
+  state.pending = state.pending.filter((x) => x.id !== p.id);
+  saveState();
+  broadcast({ type: 'pending', pending: state.pending });
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -384,6 +452,7 @@ wss.on('connection', (ws, req) => {
     online: onlineList(),
     board: state.board,
     chat: state.chat,
+    pending: state.pending,
   }));
   broadcastPresence();
 
@@ -397,6 +466,12 @@ wss.on('connection', (ws, req) => {
     } else if (msg.type === 'chat') {
       const text = clean(msg.text, 500);
       if (!text) return;
+      if (member.role === 'tamu') return; // tamu tidak bisa chat
+      if (!canWriteFree(member)) { // pegawai (selain Rias): jadi usulan
+        const p = queueProposal('chat', member, { text });
+        try { ws.send(JSON.stringify({ type: 'chat-queued', proposal: p })); } catch (_) {}
+        return;
+      }
       const m = { id: newId(), author: member.name, role: member.role, text, at: now() };
       state.chat.push(m);
       if (state.chat.length > 100) state.chat = state.chat.slice(-100);
