@@ -143,6 +143,8 @@
         <div id="inviteOut"></div>
         <h3>📥 Permintaan Masuk</h3>
         <div id="requestList"><div class="card">Tidak ada permintaan menunggu.</div></div>
+        <h3>📥 Usulan Masuk (butuh persetujuan)</h3>
+        <div id="pendingList"><div class="card">Tidak ada usulan menunggu.</div></div>
         <h3>👥 Anggota</h3>
         <div id="memberList"></div>
       </div>
@@ -154,7 +156,7 @@
       <label>Isi / catatan</label>
       <textarea id="boardText" rows="2" maxlength="500" placeholder="Detail tugas…"></textarea>
       <div style="margin-top:8px"><button id="btnAddBoard">+ Tempel ke Papan</button></div>
-      <div class="note" id="boardNote">Tamu hanya bisa menempel tugas. Mengambil, mengedit, dan menghapus hanya untuk Pegawai &amp; Owner.</div>
+      <div class="note" id="boardNote">Tamu tidak bisa mengisi papan tugas atau chat. Pegawai mengisi lewat usulan yang disetujui Owner.</div>
 
       <h3>💬 Chat Kantor</h3>
       <div id="chatLog"></div>
@@ -180,6 +182,7 @@ let me = null;             // { id, name, kind, agentId, role }
 let ws = null;
 let board = [];
 let chat = [];
+let pending = [];
 let online = [];
 let inviteCodeFromUrl = new URLSearchParams(location.search).get('invite') || '';
 
@@ -344,6 +347,36 @@ async function decideRequest(id, approve) {
     loadRequests(); loadMembers();
   } catch (e) { alert(e.message); }
 }
+
+// --- Usulan masuk (tugas/chat dari Pegawai, butuh persetujuan Owner) ---
+function renderPending() {
+  const box = $('pendingList');
+  if (!box) return;
+  if (!pending.length) { box.innerHTML = '<div class="card">Tidak ada usulan menunggu.</div>'; return; }
+  box.innerHTML = pending.map((p) =>
+    '<div class="card"><b>' + esc(p.author) + '</b> <span class="status">[' + (p.type === 'task' ? 'tugas' : 'chat') + ']</span>' +
+    (p.type === 'task'
+      ? '<div><b>' + esc(p.title) + '</b>' + (p.text ? '<br>' + esc(p.text) : '') + '</div>'
+      : '<div>' + esc(p.text) + '</div>') +
+    '<div class="meta">' + new Date(p.createdAt).toLocaleString('id-ID') + '</div>' +
+    '<div class="actions">' +
+    '<button class="small" onclick="decidePending(\'' + p.id + '\', true)">Setujui</button>' +
+    '<button class="small secondary" onclick="decidePending(\'' + p.id + '\', false)">Tolak</button>' +
+    '</div></div>').join('');
+}
+async function loadPending() {
+  try {
+    const r = await api('/api/pending', 'GET', null, true);
+    pending = r.pending || [];
+    renderPending();
+  } catch (e) { /* diam */ }
+}
+async function decidePending(id, approve) {
+  try {
+    await api('/api/pending/' + id + (approve ? '/approve' : '/reject'), 'POST', {}, true);
+    loadPending();
+  } catch (e) { alert(e.message); }
+}
 async function loadMembers() {
   try {
     const r = await api('/api/members', 'GET', null, true);
@@ -418,8 +451,9 @@ $('btnAddBoard').onclick = async () => {
   const text = $('boardText').value.trim();
   if (!title) { alert('Judul tugas wajib diisi.'); return; }
   try {
-    await api('/api/board', 'POST', { title, text }, true);
+    const r = await api('/api/board', 'POST', { title, text }, true);
     $('boardTitle').value = ''; $('boardText').value = '';
+    if (r.pending) alert('Usulan terkirim — menunggu persetujuan Owner.');
   } catch (e) { alert(e.message); }
 };
 function renderChat() {
@@ -436,7 +470,10 @@ async function sendChat() {
   inp.value = '';
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'chat', text }));
   else {
-    try { await api('/api/chat', 'POST', { text }, true); } catch (e) { alert(e.message); }
+    try {
+      const r = await api('/api/chat', 'POST', { text }, true);
+      if (r.pending) alert('Usulan chat terkirim — menunggu persetujuan Owner.');
+    } catch (e) { alert(e.message); }
   }
 }
 $('btnChat').onclick = sendChat;
@@ -696,10 +733,20 @@ function enterOffice() {
   $('meCard').innerHTML = '<b>' + esc(me.name) + '</b> ' + roleBadge(me.role) +
     '<div class="meta">' + (me.kind === 'agent' ? 'Agent · ID: ' + esc(me.agentId) : 'Manusia') + '</div>';
   $('ownerPanel').style.display = me.role === 'owner' ? 'block' : 'none';
-  $('boardNote').textContent = me.role === 'tamu'
-    ? 'Kamu Tamu: hanya bisa menempel tugas. Mengambil, mengedit, dan menghapus hanya untuk Pegawai & Owner.'
-    : 'Kamu ' + (me.role === 'owner' ? 'Owner' : 'Pegawai') + ': bisa mengambil, menyelesaikan, dan menghapus tugas.';
-  if (me.role === 'owner') { loadRequests(); loadMembers(); setInterval(() => { loadRequests(); loadMembers(); }, 8000); }
+  // Aturan tulis: Tamu tidak bisa mengisi; Pegawai (selain Rias) mengisi
+  // lewat usulan yang disetujui Owner; Owner + Rias bebas mengisi.
+  if (me.role === 'tamu') {
+    $('boardTitle').disabled = true; $('boardText').disabled = true; $('btnAddBoard').disabled = true;
+    $('chatInput').disabled = true; $('btnChat').disabled = true;
+    $('chatInput').placeholder = 'Tamu tidak bisa mengirim chat.';
+    $('boardNote').textContent = 'Kamu Tamu: tidak bisa mengisi papan tugas atau chat kantor. Hanya Owner dan Rias yang bisa mengisi; Pegawai perlu persetujuan Owner.';
+  } else if (me.role === 'pegawai' && me.name !== 'Rias') {
+    $('chatInput').placeholder = 'Chat dikirim sebagai usulan (butuh persetujuan Owner)…';
+    $('boardNote').textContent = 'Tugas yang kamu tempel dikirim sebagai usulan dan baru tampil di papan setelah disetujui Owner.';
+  } else {
+    $('boardNote').textContent = 'Kamu ' + (me.role === 'owner' ? 'Owner' : 'Pegawai') + ': bisa mengambil, menyelesaikan, dan menghapus tugas.';
+  }
+  if (me.role === 'owner') { loadRequests(); loadMembers(); loadPending(); setInterval(() => { loadRequests(); loadMembers(); loadPending(); }, 8000); }
   if (!window.THREE) { alert('Three.js gagal dimuat dari CDN. Periksa koneksi internet lalu muat ulang.'); return; }
   buildScene();
   connectWS();
@@ -712,9 +759,10 @@ function connectWS() {
     let msg;
     try { msg = JSON.parse(ev.data); } catch (_) { return; }
     if (msg.type === 'hello') {
-      online = msg.online; board = msg.board; chat = msg.chat;
+      online = msg.online; board = msg.board; chat = msg.chat; pending = msg.pending || [];
       myPos = { x: msg.you.x, z: msg.you.z };
       syncAvatars(online); renderOnline(); renderBoard(); renderChat();
+      if (me.role === 'owner') renderPending();
     } else if (msg.type === 'presence') {
       online = msg.online; syncAvatars(online); renderOnline();
     } else if (msg.type === 'pos') {
@@ -723,6 +771,11 @@ function connectWS() {
     } else if (msg.type === 'chat') {
       chat.push(msg.message); if (chat.length > 100) chat = chat.slice(-100);
       renderChat();
+    } else if (msg.type === 'chat-queued') {
+      alert('Usulan chat terkirim — menunggu persetujuan Owner.');
+    } else if (msg.type === 'pending') {
+      pending = msg.pending || [];
+      if (me.role === 'owner') renderPending();
     } else if (msg.type === 'board') {
       board = msg.board; renderBoard();
     } else if (msg.type === 'request') {
