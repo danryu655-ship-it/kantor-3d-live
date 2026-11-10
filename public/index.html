@@ -131,7 +131,7 @@
       <div id="onlineBox"><b>🟢 Online sekarang</b><div id="onlineList"></div>
         <div style="color:#9aa1b5;font-size:12px;margin-top:6px">Hanya orang yang benar-benar sedang terhubung yang terlihat di sini — tidak ada bot.</div>
       </div>
-      <div id="sceneHint">Gerak: WASD / tombol panah, atau klik lantai untuk berjalan. Ruang Kerja (kanan atas) hanya untuk Pegawai &amp; Owner.</div>
+      <div id="sceneHint">Geser layar untuk memutar kamera (cubit untuk zoom). Ketuk lantai untuk berjalan, atau WASD / tombol panah. Ruang Kerja (kanan atas) hanya untuk Pegawai &amp; Owner.</div>
     </div>
     <div id="sidebar">
       <h3>👤 Kamu</h3>
@@ -580,19 +580,64 @@ function buildScene() {
   window.addEventListener('resize', resize);
   resize();
 
-  // Klik lantai = berjalan ke titik itu
+  // Kamera orbit: geser 1 jari = putar kamera, cubit 2 jari = zoom, ketuk = berjalan.
+  let camYaw = 0, camPitch = 0.86, camDist = 17;
   const ray = new THREE.Raycaster();
+  const pointers = new Map();
+  let dragStart = null, dragLast = null, dragged = false, pinchLast = 0;
   canvas.addEventListener('pointerdown', (e) => {
+    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) { dragStart = { x: e.clientX, y: e.clientY }; dragLast = { x: e.clientX, y: e.clientY }; dragged = false; }
+    if (pointers.size === 2) pinchLast = 0;
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) {
+      const pts = [...pointers.values()];
+      const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      if (pinchLast > 0 && d > 0) camDist = Math.min(30, Math.max(8, camDist * (pinchLast / d)));
+      pinchLast = d;
+      return;
+    }
+    if (!dragLast || !dragStart) return;
+    const dx = e.clientX - dragLast.x, dy = e.clientY - dragLast.y;
+    if (Math.abs(e.clientX - dragStart.x) + Math.abs(e.clientY - dragStart.y) > 6) dragged = true;
+    if (dragged) {
+      camYaw -= dx * 0.005;
+      camPitch = Math.min(1.35, Math.max(0.15, camPitch + dy * 0.005));
+    }
+    dragLast = { x: e.clientX, y: e.clientY };
+  });
+  function endPointer(e) {
+    const wasTap = pointers.size === 1 && !dragged;
+    const tapX = e.clientX, tapY = e.clientY;
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinchLast = 0;
+    if (pointers.size === 0) { dragLast = null; dragStart = null; }
+    if (!wasTap) return;
+    // Ketuk lantai = berjalan ke titik itu
     const r = canvas.getBoundingClientRect();
-    const nx = ((e.clientX - r.left) / r.width) * 2 - 1;
-    const ny = -((e.clientY - r.top) / r.height) * 2 + 1;
+    const nx = ((tapX - r.left) / r.width) * 2 - 1;
+    const ny = -((tapY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera({ x: nx, y: ny }, camera);
     const hit = ray.intersectObject(floorMesh);
     if (hit.length) {
       const p = clampLocal(hit[0].point.x, hit[0].point.z, me.role, myPos);
       moveTarget = p;
     }
+  }
+  canvas.addEventListener('pointerup', endPointer);
+  canvas.addEventListener('pointercancel', (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) { dragLast = null; dragStart = null; }
+    pinchLast = 0;
   });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    camDist = Math.min(30, Math.max(8, camDist * (1 + e.deltaY * 0.001)));
+  }, { passive: false });
 
   window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; if (['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
@@ -632,11 +677,14 @@ function buildScene() {
       a.x += (a.tx - a.x) * 0.25; a.z += (a.tz - a.z) * 0.25;
       a.group.position.set(a.x, 0, a.z);
     }
-    // Kamera mengikuti avatar sendiri
+    // Kamera orbit mengikuti avatar sendiri
     if (avatars[me.id]) {
       const p = avatars[me.id].group.position;
-      camera.position.set(p.x, 13, p.z + 11);
-      camera.lookAt(p.x, 0, p.z);
+      const cx = p.x + Math.sin(camYaw) * camDist * Math.cos(camPitch);
+      const cz = p.z + Math.cos(camYaw) * camDist * Math.cos(camPitch);
+      const cy = Math.sin(camPitch) * camDist;
+      camera.position.set(cx, cy, cz);
+      camera.lookAt(p.x, 1, p.z);
     }
     renderer.render(scene, camera);
   })();
